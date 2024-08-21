@@ -31,6 +31,8 @@ writeQueue = None
 allDataRead = None
 
 conn = None
+printStatus = True
+
 writtenCount = 0
 
 class WikiParser(ContentHandler):
@@ -154,12 +156,13 @@ def processWriting(outFile):
 
 # https://jamesthorne.com/blog/processing-wikipedia-in-a-couple-of-hours/
 def display():
-    while True:
-        print("Queue sizes: articleQueue={0} writeQueue={1} Read: {2} Written: {3}".format(
+    while printStatus:
+        print("Queue sizes: articleQueue={0} writeQueue={1} Read: {2} Written: {3}{4}".format(
             articleQueue.qsize(), 
             writeQueue.qsize(), 
             parser.pages_processed,
-            writtenCount))
+            writtenCount,
+            "       "), end="\r")
         sleep(1)
 
 if __name__ == "__main__":
@@ -199,6 +202,8 @@ if __name__ == "__main__":
         allDataRead = True
     except KeyboardInterrupt:
         print("KeyboardInterrupt detected. Terminating...")
+
+        printStatus = False
         
         while not articleQueue.empty():
             articleQueue.get()
