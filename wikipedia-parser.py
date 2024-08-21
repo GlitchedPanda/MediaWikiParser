@@ -143,7 +143,7 @@ def processArticles():
         writeQueue.put((title, cleanedText))
 
 def emptyLineFix(text: str):
-    oldLines = text.splitlines()
+    oldLines = text.lstrip().splitlines()
     newLines = []
     for line in oldLines:
         if not line.strip() == "":
