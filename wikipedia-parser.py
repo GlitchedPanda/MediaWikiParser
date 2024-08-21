@@ -15,8 +15,14 @@ from os import path
 from sys import exit
 from time import sleep
 
-from re import sub, DOTALL
+from re import sub, escape, DOTALL, IGNORECASE
 
+'''
+TODO
+1. Improve article cleaning
+2. Improve shutdown
+3. Improve status
+'''
 
 logger = getLogger("wikipedia-parser")
 
@@ -25,7 +31,7 @@ writeQueue = None
 allDataRead = None
 
 conn = None
-writtenCount = Value("i", 0)
+writtenCount = 0
 
 class WikiParser(ContentHandler):
     def __init__(self, namespace_filter, callback):
@@ -80,6 +86,14 @@ class WikiParser(ContentHandler):
         elif self.read_stack[-1] == "text":
             self.current_text += content
 
+def clean_nested(text, pattern):
+    while True:
+        newText = sub(pattern, lambda m: m.group(1), text, flags=DOTALL)
+        if newText == text:
+            break
+        text = newText
+    return text
+
 def processArticles():
     while not (allDataRead and articleQueue.empty()):
         title,text = articleQueue.get()
@@ -91,26 +105,52 @@ def processArticles():
         cleanedText = sub(r'(<!--.*?-->)', "", cleanedText, flags=DOTALL)
         # Refs
         cleanedText = sub(r'<ref( name ?= ?\"?(.*?)\"?)?((>(.*?)<\/ref>)|(\ ?\/>))', r'', cleanedText, flags=DOTALL)
-        cleanedText = sub(r'\[\[(.*?)\]\]', r'', cleanedText, flags=DOTALL)
         # Files
+        cleanedText = sub(r'\[\[File(.*?)\]\]', r'', cleanedText)
+        cleanedText = sub(r'\[\[Image(.*?)\]\]', r'', cleanedText)
+
         cleanedText = sub(r'(?i)\{\{IPA(\-[^\|\{\}]+)*?\|([^\|\{\}]+)(\|[^\{\}]+)*?\}\}', lambda m: " -LSB- "+ m.group(2)+" -RSB- ", cleanedText)
         cleanedText = sub(r'(?i)\{\{Convert\|(.*?)\|(.*?)(\|.*?)\}\}', lambda m: m.group(1)+m.group(2), cleanedText)
         cleanedText = sub(r'(?i)\[\[wikt\:(.*?)\|.*?\]\]', lambda m: m.group(1), cleanedText)
 
+        cleanedText = sub(r'\{\{commonscat-inline|(.*?)\}\}', r'', cleanedText)
+        cleanedText = clean_nested(cleanedText, r'\[\[Category:(.*?)\]\]')
+
+        cleanedText = sub(r'\[\[([^[\]]*)\|([^[\]]*)\]\]', lambda m: m.group(2), cleanedText)
+
+        cleanedText = clean_nested(cleanedText, r'\[\[(.*?)\]\]')
+        cleanedText = clean_nested(cleanedText, r'\{\{(.*?)\}\}')
+        cleanedText = clean_nested(cleanedText, r'\{\|(.*?)\|\}')
+
+        cleanedText = clean_nested(cleanedText, r'\'\'\'(.*?)\'\'\'')
+        cleanedText = clean_nested(cleanedText, r'\'\'(.*?)\'\'')
+
+        # Post
+        cleanedText = sub(r'\|', r'', cleanedText) # Some links to other pages have weird formatting. Ex: [[Boots| ]]
+
+        cleanedText = sub(r'&nbsp;',' ',cleanedText)
+        cleanedText = sub(r'<br\s?/?>','\n',cleanedText)
+
+        cleanedText = sub(r'\{\{cite(.*?)\}\}', r'', cleanedText, flags=DOTALL + IGNORECASE)
+
+        cleanedText = sub(r'\([^a-zA-Z0-9]*\)', ' ', cleanedText)
+        cleanedText = sub(r'\([\s]*\)', ' ', cleanedText)
+
         writeQueue.put((title, cleanedText))
 
 def processWriting(outFile):
+    global writtenCount
     conn = sqlite3_connect(outFile)
     cursor = conn.cursor()
 
-    cursor.execute("CREATE TABLE IF NOT EXISTS pages (title text, content text)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS pages (title TEXT NOT NULL UNIQUE, content TEXT NOT NULL)")
 
     while not (allDataRead and writeQueue.empty()):
         title,text = writeQueue.get()
         cursor.execute("INSERT OR IGNORE INTO pages VALUES (?, ?)", (title, text))
         conn.commit()
-        with writtenCount.get_lock():
-            writtenCount.value += 1
+        
+        writtenCount += 1
 
 # https://jamesthorne.com/blog/processing-wikipedia-in-a-couple-of-hours/
 def display():
@@ -119,7 +159,7 @@ def display():
             articleQueue.qsize(), 
             writeQueue.qsize(), 
             parser.pages_processed,
-            writtenCount.value))
+            writtenCount))
         sleep(1)
 
 if __name__ == "__main__":
@@ -159,9 +199,6 @@ if __name__ == "__main__":
         allDataRead = True
     except KeyboardInterrupt:
         print("KeyboardInterrupt detected. Terminating...")
-        
-        outFile.close()
-        print("Closed outFile")
         
         while not articleQueue.empty():
             articleQueue.get()
