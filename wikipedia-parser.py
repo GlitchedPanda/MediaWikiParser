@@ -138,7 +138,22 @@ def processArticles():
         cleanedText = sub(r'\([^a-zA-Z0-9]*\)', ' ', cleanedText)
         cleanedText = sub(r'\([\s]*\)', ' ', cleanedText)
 
+        cleanedText = emptyLineFix(cleanedText)
+
         writeQueue.put((title, cleanedText))
+
+def emptyLineFix(text: str):
+    oldLines = text.splitlines()
+    newLines = []
+    for line in oldLines:
+        if not line.strip() == "":
+            newLines.append(line)
+        elif newLines and not newLines[-1].strip() == "":
+            newLines.append(line)
+
+        continue
+    return "\n".join(newLines)
+
 
 def processWriting(outFile):
     global writtenCount
