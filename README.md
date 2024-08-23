@@ -1,4 +1,4 @@
-# Wikipedia Parser
+# MediaWiki Parser
 
 Parses mediawiki dumps to a sqlite3 database
 

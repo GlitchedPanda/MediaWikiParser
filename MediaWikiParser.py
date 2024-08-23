@@ -24,7 +24,7 @@ TODO
 3. Improve status
 '''
 
-logger = getLogger("wikipedia-parser")
+logger = getLogger("MediaWikiParser")
 
 articleQueue = None
 writeQueue = None
